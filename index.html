@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Voice Room</title>
+    <script src="https://cdn.jsdelivr.net/npm/@skyway-sdk/room/dist/skyway_room.js"></script>
+    <style>
+        body { margin: 0; background: #36393f; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        .room-info { margin-bottom: 20px; font-size: 1.2rem; font-weight: bold; color: #b9bbbe; }
+        .user-list { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-bottom: 40px; }
+        .user-icon { width: 80px; height: 80px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; position: relative; border: 4px solid transparent; }
+        .speaking { border-color: #43b581; box-shadow: 0 0 15px #43b581; } /* 喋ってる感 */
+        .controls { display: flex; gap: 20px; }
+        button { padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; cursor: pointer; font-size: 1rem; transition: 0.2s; }
+        .mute-btn { background: #4f545c; color: white; }
+        .mute-btn.active { background: #f04747; }
+        .share-btn { background: #5865f2; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="room-info" id="room-label">Room: Connecting...</div>
+<div class="user-list" id="user-list">
+    <div id="my-icon" class="user-icon">👤</div>
+</div>
+
+<div class="controls">
+    <button id="mute-btn" class="mute-btn">🎤 ミュート</button>
+    <button class="share-btn" onclick="shareLink()">🔗 招待</button>
+</div>
+
+<script>
+    const API_KEY = 'ここにAPIキーを貼る';
+    const roomName = location.hash.slice(1) || 'Lobby';
+    document.getElementById('room-label').innerText = "Room: " + roomName;
+
+    let audioStream;
+    let audioPublication;
+
+    async function init() {
+        const context = await SkyWayContext.Create(API_KEY);
+        const room = await SkyWayRoom.FindOrCreate(context, { type: 'p2p', name: roomName });
+        const member = await room.join();
+
+        // 1. マイクのみ取得
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioTrack = audioStream.getAudioTracks()[0];
+        
+        // 2. 自分の音声を送信
+        audioPublication = await member.publish(audioStream.getAudioTracks()[0]);
+
+        // 3. ミュートボタンの処理
+        const muteBtn = document.getElementById('mute-btn');
+        muteBtn.onclick = () => {
+            const isMuted = !audioTrack.enabled;
+            audioTrack.enabled = isMuted; // マイクのON/OFF
+            muteBtn.innerText = isMuted ? "🎤 ミュート中" : "🎤 話す";
+            muteBtn.classList.toggle('active');
+            document.getElementById('my-icon').style.opacity = isMuted ? "1" : "0.5";
+        };
+
+        // 4. 相手の声を聞く
+        room.onStreamPublished.add(async (e) => {
+            if (e.publication.publisher.id === member.id) return;
+            const { stream } = await member.subscribe(e.publication.id);
+            
+            const remoteAudio = document.createElement('audio');
+            remoteAudio.srcObject = new MediaStream([stream.track]);
+            remoteAudio.play();
+
+            // 相手が入ってきたらアイコンを増やす
+            const icon = document.createElement('div');
+            icon.className = 'user-icon';
+            icon.innerText = '🎧';
+            document.getElementById('user-list').appendChild(icon);
+        });
+    }
+
+    function shareLink() {
+        navigator.share({ title: 'ボイチャ招待', url: location.href });
+    }
+
+    init();
+</script>
+</body>
+</html>
